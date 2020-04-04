@@ -10,7 +10,7 @@ from flask_jwt_extended import (
 )
 from werkzeug.utils import secure_filename
 from flask_socketio import SocketIO, send
-from models import db, User, Professional, Patient, Perfil_Professional, Panic_Alert, Status_Professional, Message_Sent, Chat_Room
+from models import db, User, Professional, Patient, Panic_Alert, Professional_Status, Message_Sent, Chat_Room
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static')
@@ -95,44 +95,48 @@ def login():
 
 @app.route('/api/register', methods=['POST'])
 def register():
-    if not request.files:
-        return jsonify({"msg": "Missing FILES in request"}), 400
-
-    file = request.files['avatar']
-    username = request.form.get('username', None)
-    password = request.form.get('password', None)
-
-    if not file and file.filname == "":
-        return jsonify({"msg": "Missing avatar parameter"}), 400
-    if not username and username == "":
-        return jsonify({"msg": "Missing username parameter"}), 400
-    if not password and password == "":
-        return jsonify({"msg": "Missing password parameter"}), 400
-
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/avatar'), filename))
+    if request.method == 'POST':
+        username = request.form.get('username', None)
+        password = request.form.get('password', None)
         
 
-    user = User.query.filter_by(username = username).first()
+        if not username and username == "":
+            return jsonify({"msg": "Field username is required"}), 400
+        if not password and password == "":
+            return jsonify({"msg": "Field password is required"}), 400
+        if not 'avatar' and avatar.filename == "":
+            return jsonify({"msg": "Field avatar is required"}), 400
+        
+        user = User.query.filter_by(username = username).first()
+        if user:
+            return jsonify({"msg": "User exists"}), 400
+        
+        if 'avatar' in request.files and allowed_file(avatar.filename):
+            avatar = request.files['avatar']
+            now = datetime.now()
+            dt_string = now.strftime("%Y-%m-%d-%H%M%S")
+            filename = secure_filename(avatar.filename)
+            filename = str(dt_string+filename)
+            avatar.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/avatar'), filename))
+        else:
+            return jsonify({"msg": "Image not allowed"})
+               
+        user = User()
+        user.username = username
+        user.password = bcrypt.generate_password_hash(password)
+        
+        if 'avatar' in request.files:
+            user.avatar = filename 
 
-    if user:
-        return jsonify({"msg": "User exists"}), 400
-    
-    user = User()
-    user.username = username
-    user.password = bcrypt.generate_password_hash(password)
-    user.avatar = filename
+        db.session.add(user)
+        db.session.commit()
 
-    db.session.add(user)
-    db.session.commit()
-
-    access_token = create_access_token(identity=user.username)
-    data = {
-        "access_token": access_token,
-        "user": user.serialize()
-    }
-    return jsonify(data), 200
+        access_token = create_access_token(identity=user.username)
+        data = {
+            "access_token": access_token,
+            "user": user.serialize()
+        }
+        return jsonify(data), 200
 
 @app.route('/api/send-lert')
 def send_alert():
