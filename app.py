@@ -10,7 +10,7 @@ from flask_jwt_extended import (
 )
 from werkzeug.utils import secure_filename
 from flask_socketio import SocketIO, send
-from models import db, User, Professional, Patient, Panic_Alert, Status_Professional, Message_Sent, Chat_Room
+from models import db, User, Professional, Patient, Panic_Alert, Professional_Status, Message_Sent, Chat_Room
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static')
@@ -65,7 +65,7 @@ def allowed_file(filename):
 def root():
     return render_template('index.html')
 
-@app.route('/api/login', methods=['POST'])
+@app.route('/api/professional/login', methods=['POST'])
 def login():
     if not request.is_json:
         return jsonify({"msg": "Missing JSON in request"}), 400
@@ -93,7 +93,7 @@ def login():
     else:
         return jsonify({"msg": "Bad username or password"}), 401
 
-@app.route('/api/register', methods=['POST'])
+@app.route('/api/professional/register', methods=['POST'])
 def register():
     if not request.files:
         return jsonify({"msg": "Missing FILES in request"}), 400
@@ -113,16 +113,27 @@ def register():
         filename = secure_filename(file.filename)
         file.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/avatar'), filename))
         
-
     user = User.query.filter_by(username = username).first()
-
+    
     if user:
         return jsonify({"msg": "User exists"}), 400
     
+    if 'avatar' in request.files and allowed_file(avatar.filename):
+        avatar = request.files['avatar']
+        now = datetime.now()
+        dt_string = now.strftime("%Y-%m-%d-%H%M%S")
+        filename = secure_filename(avatar.filename)
+        filename = str(dt_string+filename)
+        avatar.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/avatar'), filename))
+    else:
+        return jsonify({"msg": "Image not allowed"})
+            
     user = User()
     user.username = username
     user.password = bcrypt.generate_password_hash(password)
-    user.avatar = filename
+    
+    if 'avatar' in request.files:
+        user.avatar = filename 
 
     db.session.add(user)
     db.session.commit()
@@ -134,8 +145,17 @@ def register():
     }
     return jsonify(data), 200
 
-@app.route('/api/send-lert') # TO DO: corregir texto alert
-def send_alert():
+@app.route('/api/patient/login', methods=['POST'])
+def login_patient():
+    pass
+
+@app.route('/api/patient/register', methods=['POST'])
+def register():
+    pass
+
+@app.route('/api/patient/alert/<active_alert>', methods=['POST'])
+@jwt_required
+def send_alert(active_alert):
 
     msg = Message("Prueba de Email", 
         sender="helpmn2020@gmail.com", # TO DO:  cambiar esto para probar
@@ -147,10 +167,13 @@ def send_alert():
 
     return "Correo Enviado"
 
-@app.route('/api/profile/<id>')
+@app.route('/api/professional/profile/<id>', methods=['GET'])
+@jwt_required
 def profile(id=None):
-    return "ID del profesional es: {}".format(id)
-
+    #En la vista del perfil, el profesional tiene la opción 
+    #de modificar los documentos cargados, y ver las conversaciones que ha tenido.
+    pass
+    
 @app.route('/api/chat-room/<id>')
 @jwt_required
 def chat(id=None):
@@ -161,10 +184,6 @@ def chat(id=None):
 def uploaded_file(filename):
     return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'img/avatar'), filename)
 
-@app.route('/api/private', methods=['GET'])
-@jwt_required
-def private():
-    return jsonify({"msg": "Private Route"}), 200
 
 @socketIo.on("/message")
 def handleMessage(msg):

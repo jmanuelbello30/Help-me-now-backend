@@ -1,4 +1,5 @@
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 db = SQLAlchemy()
 
@@ -7,14 +8,20 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
-
+    #Relación one-to-one con los modelos Paciente y Profesional, por lo tanto 
+    #parámetro debe ser uselist=False
+    professional = db.relationship('Professional', uselist=False, backref='professional', lazy=True)
+    patient = db.relationship('Patient', uselist=False, backref='patient', lazy=True)
+    
     def __repr__(self):
         return '<User &r>' % self.email
 
     def serialize(self):
         return {
             "id": self.id,
-            "email": self.email
+            "username": self.username,
+            "professional": self.professional_id.serialize(),
+            "patient": self.patient_id.serialize()
        }
 
 psicological_therapy = db.Table('psicological_therapy',
@@ -26,12 +33,19 @@ class Professional(db.Model):
     __tablename__='professionals'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    rut = db.Column(db.String(100), nullable=True, default="sin-foto.png")
-    #patient_id = db.relationship('Patient', lazy='subquery',
-    #    backref=db.backref('professionals', lazy=True))
-    # perfil = db.relationship('Perfil_Professional', backref='professionals', lazy=True)
-    # status = db.relationship('Status_Professional', backref='Professional', lazy=True)
-    # mesagges_sent = db.relationship('Message_Sent', backref='Professional', lazy=True)
+    #Las variables siguientes conrresponden a archivos que son requeridos para 
+    #poder registrarse, por lo tanto nullable=False.
+    rut = db.Column(db.String(150), nullable=False, )
+    cert_profesional =  db.Column(db.String(150), nullable=False, )
+    cert_spsalud = db.Column(db.String(150), nullable=False)
+    #certificado de capacitaciones o especializaciones es opcional,
+    #por lo tanto es nullable=True
+    cert_capacitaciones = db.Column(db.String(150), nullable=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    patients = db.relationship('Patient', secondary=psicological_therapy, lazy='subquery',
+        backref=db.backref('professionals', lazy=True))    
+    status = db.relationship('Professional_Status', uselist=False, backref='professional', lazy=True)
+    mesagges = db.relationship('Message_Sent', backref='professional', lazy=True)
 
     def __repr__(self):
         return "<Professional %r>" % self.name
@@ -40,101 +54,79 @@ class Professional(db.Model):
         return{
             "id": self.id,
             "name": self.name,
-            "rut": self.rut
-            #"email": self.user.email
-            #"perfil": self.perfil.serialize()
+            "rut": self.rut,
+            "cert_profesional": self.cert_profesional,
+            "cert_spsalud": self.cert_spsalud,
+            "cert_capacitaciones": self.cert_capacitaciones,
+            "patients": self.patients.serialize(),
+            "user_id": self.user_id.serialize(),
+            "status": self.status.serialize()
         }
 
-class Status_Professional(db.Model):
-    __tablename__='status_professionals'
+class Professional_Status(db.Model):
+    __tablename__='professional_status'
     id = db.Column(db.Integer, primary_key=True)
-    available = db.Column(db.String(120), nullable=False)
-    #professional_id = db.Column(db.Integer, db.ForeignKey('professionals.id'),
-    #   nullable=False)
-    panic_alerts_id = db.Column(db.Integer, db.ForeignKey('alerts.id'),
-        nullable=False)
-    
-    def __repr__(self):
-        return "<Status_Professional %r>" % self.available
+    available = db.Column(db.Boolean, default=False, create_constraint=True, name=None)
+    alerts = db.relationship('Panic_Alert', backref='professional', lazy=True)
+    professional_id = db.Column(db.Integer, db.ForeignKey('professionals.id'), nullable=False)
     
     def serialize(self):
         return{
             "id": self.id,
             "available": self.available,
-            #"professional_id": self.professional_id,
-            "panic_alerts_id": self.panic_alerts_id,
+            "alerts": self.alerts.serialize()
         }
     
 
 class Patient(db.Model):
     __tablename__='patients'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
-    password = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
     alerts = db.relationship('Panic_Alert', backref='patient', lazy=True)
-    mesagges_sent = db.relationship('Message_Sent', backref='Professional', lazy=True)
-
-    def __repr__(self):
-        return '<Patient &r>' % self.username
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
 
     def serialize(self):
         return {
             "id": self.id,
-            "username": self.username,
+            "name": self.username,
             "alerts": self.alerts,
-            "message_sent": self.mesagges_sent
         }
 
 class Panic_Alert(db.Model):
     __tablename__='alerts'
     id = db.Column(db.Integer, primary_key=True)
-    alert = db.Column(db.String(120), nullable=False)
-    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'),
-        nullable=False)
-    status = db.relationship('Status_Professional', backref='alerts', lazy=True)
-
-    def __repr__(self):
-        return '<Panic_Alert &r>' % self.alert
+    active_alert = db.Column(db.Boolean, default=False, create_constraint=True, name=None)
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), nullable=False)
+    status_id = db.Column(db.Integer, db.ForeignKey('professional_status.id'), nullable=False)
 
     def serialize(self):
         return {
             "id": self.id,
-            "patient_id": self.patient_id,
-            "alert": self.alert,
-            "status": self.status
+            "active_alert": self.active_alert
         }
 
 class Message_Sent(db.Model):
     __tablename__='messages'
     id = db.Column(db.Integer, primary_key=True)
-    msg_sent = db.Column(db.String(120), nullable=False)
+    message = db.Column(db.String(400))
     timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
-    professional_id = db.Column(db.Integer, db.ForeignKey('professionals.id'),
-        nullable=False)
-    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'),
-        nullable=False)
-    chat_id = db.Column(db.Integer, db.ForeignKey('chat.id'),
-        nullable=False)
-    
-    def __repr__(self):
-        return '<Message_Sent &r>' % self.msg_sent
+    professional_id = db.Column(db.Integer, db.ForeignKey('professionals.id'), nullable=False)
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), nullable=False)
+    chat_id = db.Column(db.Integer, db.ForeignKey('chats.id'), nullable=False)
 
     def serialize(self):
         return {
             "id": self.id,
-            "msg_sent": self.msg_sent,
-            "timestamp": self.timestamp,
-            "message_sent": self.mesagges_sent,
-            "professional_id": self.professional_id,
-            "patient_id": self.patient_id
+            "message": self.message,
+            "timestamp": self.timestamp
         }
 
 class Chat_Room(db.Model):
-    __tablename__='chat'
+    __tablename__='chats'
     id = db.Column(db.Integer, primary_key=True)
-    chat_history = db.Column(db.String(50), nullable=True)
+    #chat_history = db.Column(db.String(50), nullable=True)
     timestamp = db.Column(db.DateTime, index=True, default=datetime.utcnow)
-    # mesagges_sent = db.relationship('Message_Sent', backref='Professional', lazy=True)
+    mesagges_sent = db.relationship('Message_Sent', backref='user', lazy=True)
 
     def __repr__(self):
         return "<Chat_Room %r>" % self.id
@@ -142,7 +134,6 @@ class Chat_Room(db.Model):
     def serialize(self):
         return{
             "id": self.id,
-            "chat_history": self.chat_history,
             "timestamp": self.timestamp,
             "mesagges_sent": self.mesagges_sent
         }
