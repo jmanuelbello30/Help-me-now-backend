@@ -146,7 +146,7 @@ def login():
 def register():
     pass
 
-@app.route('/api/patient/<active_alert>', methods=['POST'])
+@app.route('/api/patient/alert/<active_alert>', methods=['POST'])
 @jwt_required
 def send_alert(active_alert):
 
@@ -160,7 +160,7 @@ def send_alert(active_alert):
 
     return "Correo Enviado"
 
-@app.route('/api/professional/<available>')
+@app.route('/api/professional/status/<available>')
 @jwt_required
 def status(available):
     #Disponible: Puede recibir alertas al mail
