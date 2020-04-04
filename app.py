@@ -139,7 +139,7 @@ def register():
         return jsonify(data), 200
 
 @app.route('/api/patient/login', methods=['POST'])
-def login():
+def login_patient():
     pass
 
 @app.route('/api/patient/register', methods=['POST'])
@@ -159,13 +159,6 @@ def send_alert(active_alert):
     mail.send(msg)
 
     return "Correo Enviado"
-
-@app.route('/api/professional/status/<available>')
-@jwt_required
-def status(available):
-    #Disponible: Puede recibir alertas al mail
-    #No Disponibles: No puede recibir alertas
-    return "La disponibilidad del profesional es: {}".format(available)
 
 @app.route('/api/professional/profile/<id>', methods=['GET'])
 @jwt_required

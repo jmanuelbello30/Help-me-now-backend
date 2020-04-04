@@ -8,11 +8,10 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
-    patient_id = db.relationship('Patient', backref='patient', lazy=True)
     #Relación one-to-one con los modelos Paciente y Profesional, por lo tanto 
     #parámetro debe ser uselist=False
-    professional_id = db.relationship('Professional', uselist=False, backref='professional', lazy=True)
-    patient_id = db.relationship('Patient', uselist=False, backref='patient', lazy=True)
+    professional = db.relationship('Professional', uselist=False, backref='professional', lazy=True)
+    patient = db.relationship('Patient', uselist=False, backref='patient', lazy=True)
     
     def __repr__(self):
         return '<User &r>' % self.email
@@ -21,8 +20,8 @@ class User(db.Model):
        return {
             "id": self.id,
             "username": self.username,
-            "professional_id": self.professional_id.serialize(),
-            "patient_id": self.patient_id.serialize()
+            "professional": self.professional_id.serialize(),
+            "patient": self.patient_id.serialize()
        }
 
 psicological_therapy = db.Table('psicological_therapy',
@@ -91,7 +90,6 @@ class Patient(db.Model):
             "id": self.id,
             "name": self.username,
             "alerts": self.alerts,
-            "message_sent": self.mesagges_sent
         }
 
 class Panic_Alert(db.Model):
