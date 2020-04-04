@@ -9,7 +9,8 @@ class User(db.Model):
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
     patient_id = db.relationship('Patient', backref='patient', lazy=True)
-    #Relación one-to-one: párametro de relationship() debe ser uselist=False
+    #Relación one-to-one con los modelos Paciente y Profesional, por lo tanto 
+    #parámetro debe ser uselist=False
     professional_id = db.relationship('Professional', uselist=False, backref='professional', lazy=True)
     patient_id = db.relationship('Patient', uselist=False, backref='patient', lazy=True)
     
@@ -33,7 +34,7 @@ class Professional(db.Model):
     __tablename__='professionals'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    #rut refiere a la foto por ambos lados de la cédula de identidad, que es obligatoria para 
+    #Las variables siguientes conrresponden a archivos que son requeridos para 
     #poder registrarse, por lo tanto nullable=False.
     rut = db.Column(db.String(150), nullable=False, )
     cert_profesional =  db.Column(db.String(150), nullable=False, )
