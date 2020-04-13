@@ -7,6 +7,11 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
+    user_type = db.Column(db.String(100), nullable=False) 
+    #Relación one-to-one con los modelos Paciente y Profesional, por lo tanto 
+    #parámetro debe ser uselist=False
+    #professional = db.relationship('Professional', uselist=False, backref='professional', lazy=True)
+    #patient = db.relationship('Patient', uselist=False, backref='patient', lazy=True)   
 
     def __repr__(self):
         return '<User &r>' % self.email
@@ -14,7 +19,10 @@ class User(db.Model):
     def serialize(self):
         return {
             "id": self.id,
-            "email": self.email
+            "email": self.email,
+            "user_type": self.user_type,
+            #"professional": self.professional_id,
+            #"patient": self.patient_id
        }
 
 psicological_therapy = db.Table('psicological_therapy',
@@ -27,11 +35,15 @@ class Professional(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     rut = db.Column(db.String(100), nullable=True, default="sin-foto.png")
-    #patient_id = db.relationship('Patient', lazy='subquery',
-    #    backref=db.backref('professionals', lazy=True))
-    # perfil = db.relationship('Perfil_Professional', backref='professionals', lazy=True)
-    # status = db.relationship('Status_Professional', backref='Professional', lazy=True)
-    # mesagges_sent = db.relationship('Message_Sent', backref='Professional', lazy=True)
+    certification = db.Column(db.String(100), nullable=False, default="sin-foto.png")
+    numberid = db.Column(db.String(100), nullable=False, default="sin-foto.png")
+    curriculum = db.Column(db.String(100), nullable=False, default="sin-foto.png")
+    # Todos los documentos son obligatorios para procesar el registro
+    #user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    #patients = db.relationship('Patient', secondary=psicological_therapy, lazy='subquery',
+    #backref=db.backref('professionals', lazy=True))    
+    #status = db.relationship('Professional_Status', uselist=False, backref='professional', lazy=True)
+    #mesagges = db.relationship('Message_Sent', backref='professional', lazy=True)
 
     def __repr__(self):
         return "<Professional %r>" % self.name
