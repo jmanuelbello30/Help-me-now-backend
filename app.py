@@ -29,7 +29,7 @@ app.config['MAIL_PORT'] = 465
 app.config['MAIL_USE_SSL'] = True
 app.config['MAIL_DEBUG'] = True
 app.config['MAIL_USERNAME'] = 'helpmn2020@gmail.com'
-app.config['MAIL_PASSWORD'] = ''
+app.config['MAIL_PASSWORD'] = 'Helpmenow2020'
 app.config['SECRET_KEY'] = 'mysecret'
 JWTManager(app)
 CORS(app)
@@ -43,19 +43,14 @@ manager.add_command("db", MigrateCommand)
 app.debug = True
 app.host = 'localhost'
 
-def send_mail(subject, sender, recipients, body=None, html=None):
-    msg = Message(subject, 
-        sender=sender,
-        recipients=[recipients])
+def send_mail(subject, sender, recipients, message):
+    msg = Message(subject,
+                  sender=sender,
+                  recipients=[recipients])
 
-    if body is not None:
-        msg.body = body
-    if html is not None:
-        msg.html = html
+    msg.html = message
 
     mail.send(msg)
-
-    return "Correo Enviado"
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -174,6 +169,72 @@ def handleMessage(msg):
 
 # RUTAS DE PROFESIONALES
 
+@app.route('/api/professional/login', methods=['POST'])
+def professional_login():
+    # Data recibida:
+    #   request.email
+    #   request.password
+
+    if request.method == 'POST':
+      email = request.json.get('email', None)
+      password = request.json.get('password', None)
+
+    if not email or email == "":
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "Debe introducir Email registrado",
+                "finish": "false"
+            }
+        }), 400
+
+    if not password or password == "":
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "Debe introducir su password para acceder perfil",
+                "finish": "false"
+            }
+        }), 400
+
+    # Pasaron todas las validaciones
+
+    user = User.query.filter_by(email = email).first()
+
+    if not user:
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "El correo ingresado no esta registrado",
+                "finish": "false"
+            }
+        }), 400
+
+
+    # 1. Se Logea el profesional
+    if bcrypt.check_password_hash(user.password, password):
+    # Se genera el acceso atraves del token para el login
+        access_token = create_access_token(identity=user.email)
+    # Respuesta
+        data = {
+            "access_token": access_token,
+            "user": user.serialize(),
+            "login": {
+                "error": "",
+                "message": "Bienvenido/a",
+                "finish": "true"
+            }
+        }
+        return jsonify(data), 200
+    else:
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "Password incorrecto, por favor revise",
+                "finish": "false"
+            }
+        }), 401
+
 @app.route('/api/professional/register', methods=['POST'])
 def professional_register():
     # Data recibida:
@@ -183,7 +244,7 @@ def professional_register():
     #   request.files.rut
     #   request.files.certification
     #   request.files.numberid
-    #   request.files.courses
+    #   request.files.curriculum
 
     #print(request.files)
 
@@ -197,14 +258,13 @@ def professional_register():
     rut           = request.files["rut"]
     certification = request.files["certification"]
     numberid      = request.files["numberid"]
-    #courses       = request.files["courses"]
+    curriculum    = request.files["curriculum"]
 
     if not rut or rut.filename == "":
         return jsonify({
             "user": {},
             "register": {
                 "error": "Debe cargar el documento RUT",
-                "message": "Datos con error",
                 "finish": "false"
             }
         }), 400
@@ -213,7 +273,6 @@ def professional_register():
             "user": {},
             "register": {
                 "error": "Debe cargar el documento certification",
-                "message": "Datos con error",
                 "finish": "false"
             }
         }), 400
@@ -222,26 +281,23 @@ def professional_register():
             "user": {},
             "register": {
                 "error": "Debe cargar el documento numberid",
-                "message": "Datos con error",
                 "finish": "false"
             }
         }), 400
-    #if courses and courses.filename == "":
-    #    return jsonify({
-    #        "user": {},
-     #       "register": {
-     #           "error": "Debe cargar el documento courses",
-      #          "message": "Datos con error",
-      #          "finish": "false"
-       #     }
-        #}), 400
+    if curriculum and curriculum.filename == "":
+        return jsonify({
+            "user": {},
+            "register": {
+                "error": "Debe cargar el documento curriculum profesional",
+                "finish": "false"
+            }
+        }), 400
 
     if not name or name == "":
         return jsonify({
             "user": {},
             "register": {
                 "error": "El nombre es obligatorio",
-                "message": "Datos con error",
                 "finish": "false"
             }
         }), 400
@@ -250,7 +306,6 @@ def professional_register():
             "user": {},
             "register": {
                 "error": "Missing password parameter",
-                "message": "Datos con error",
                 "finish": "false"
             }
         }), 400
@@ -259,7 +314,6 @@ def professional_register():
             "user": {},
             "register": {
                 "error": "Missing email parameter",
-                "message": "Datos con error",
                 "finish": "false"
             }
         }), 400
@@ -270,24 +324,23 @@ def professional_register():
         return jsonify({
             "user": {},
             "register": {
-                "error": "Ya existe un usuario con el email, ingrese otro email",
-                "message": "Datos con error",
+                "error": "Ya se ha creado un usuario con este email, por favor ingrese otro",
                 "finish": "false"
             }
         }), 400
 
     if allowed_file(rut.filename):
-        filename_rut = secure_filename(rut.filename)
+        filename_rut = secure_filename(rut.filename + "_" + email)
         rut.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_rut))
     if allowed_file(certification.filename):
-        filename_certification = secure_filename(certification.filename)
+        filename_certification = secure_filename(certification.filename + "_" + email)
         certification.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_certification))
     if allowed_file(numberid.filename):
-        filename_numberid = secure_filename(numberid.filename)
+        filename_numberid = secure_filename(numberid.filename + "_" + email)
         numberid.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_numberid))
-    #if courses and allowed_file(courses.filename):
-     #   filename_courses = secure_filename(courses.filename)
-       # courses.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_courses))
+    if allowed_file(curriculum.filename):
+        filename_curriculum = secure_filename(curriculum.filename + "_" + email)
+        curriculum.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_curriculum))
 
     # Pasaron todas las validaciones
     # Se registra el profesional en 3 pasos:
@@ -296,6 +349,9 @@ def professional_register():
     new_professional = Professional()
     new_professional.name = name
     new_professional.rut = filename_rut
+    new_professional.certification = filename_certification
+    new_professional.numberid = filename_numberid
+    new_professional.curriculum = filename_curriculum
     db.session.add(new_professional)
     db.session.commit()
     professional = new_professional.serialize()
@@ -304,9 +360,14 @@ def professional_register():
     user = User()
     user.password = bcrypt.generate_password_hash(password)
     user.email = email
+    user.user_type = "professional"
     user.professional_id = professional['id']
     db.session.add(user)
     db.session.commit()
+
+    #Se envía correo de confirmación
+    html = render_template('base.html', user=user)
+    send_mail("Bienvenido a Help me Now - Profesional", "helpmn2020@gmail.com", user.email, html)
 
     # Luego de la creacion del usuario, se general el token de acceso para el login
     access_token = create_access_token(identity=user.email)
