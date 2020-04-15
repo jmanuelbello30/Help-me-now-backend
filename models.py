@@ -81,18 +81,17 @@ class Status_Professional(db.Model):
 class Patient(db.Model):
     __tablename__='patients'
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(100), unique=True, nullable=False)
-    password = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
     alerts = db.relationship('Panic_Alert', backref='patient', lazy=True)
     mesagges_sent = db.relationship('Message_Sent', backref='Professional', lazy=True)
-
+    #user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     def __repr__(self):
         return '<Patient &r>' % self.username
 
     def serialize(self):
         return {
             "id": self.id,
-            "username": self.username,
+            "name": self.name,
             "alerts": self.alerts,
             "message_sent": self.mesagges_sent
         }
