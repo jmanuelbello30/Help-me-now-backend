@@ -60,87 +60,128 @@ def allowed_file(filename):
 def root():
     return render_template('index.html')
 
-@app.route('/api/login', methods=['POST'])
-def login():
+@app.route('/api/users/<int:id>', methods=['DELETE'])
+def deleteUser(id):
+    user = Patient.query.get(id)
+    if not user:
+        return jsonify({"msg": "User not found"}), 404
+    db.session.delete(user)
+    db.session.commit()
+
+    return jsonify({"msg": "User deleted"})
+
+@app.route('/api/patient/login', methods=['POST'])
+def loginPatient():
     if not request.is_json:
         return jsonify({"msg": "Missing JSON in request"}), 400
 
-    username = request.json.get('username', None)
+    email = request.json.get('email', None)
     password = request.json.get('password', None)
-    if not username:
-        return jsonify({"msg": "Missing username parameter"}), 400
+    if not email:
+        return jsonify({"msg": "Debe introducirse un email válido."}), 400
     if not password:
-        return jsonify({"msg": "Missing password parameter"}), 400
+        return jsonify({"msg": "Debe introducirse una contraseña válida."}), 400
 
-    user = User.query.filter_by(username = username).first()
+    user = User.query.filter_by(email = email).first()
 
     if not user:
-        return jsonify({"msg": "User not found"}), 404
+        return jsonify({"msg": "No se ha encontrado ningún usuario asociado a este email."}), 404
 
     if bcrypt.check_password_hash(user.password, password):
 
-        access_token = create_access_token(identity=username)
+        access_token = create_access_token(identity=email)
         data = {
             "access_token": access_token,
-            "user": user.serialize()
+            "user": user.serialize(),
+            "login": {
+                "error": "",
+                "message": "Bienvenido/a",
+                "finish": "true"
+            }
         }
         return jsonify(data), 200
     else:
-        return jsonify({"msg": "Bad username or password"}), 401
+        return jsonify({"msg": "Algo ha salido mal."}), 401
 
-@app.route('/api/register', methods=['POST'])
-def register():
-    if not request.files:
-        return jsonify({"msg": "Missing FILES in request"}), 400
 
-    file = request.files['avatar'] # TO DO: cambiar el nombre por el de los documentos
-    username = request.form.get('username', None)
-    password = request.form.get('password', None)
+@app.route('/api/patient/register', methods=['POST'])
+def registerPatient():
+    if not request.is_json:
+        return jsonify({"msg": "Missing JSON in request"}), 405
 
-    if not file and file.filename == "":
-        return jsonify({"msg": "Missing avatar parameter"}), 400
-    if not username and username == "":
-        return jsonify({"msg": "Missing username parameter"}), 400
-    if not password and password == "":
-        return jsonify({"msg": "Missing password parameter"}), 400
+    email = request.json.get('email', None)
+    username = request.json.get('username', None)
+    password = request.json.get('password', None)
 
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/avatar'), filename))
-        
+    if not email:
+        return jsonify({"msg": "Se requiere un email válido."}), 406
+    if not password:
+        return jsonify({"msg": "Se requiere una contraseña válida."}), 407
 
-    user = User.query.filter_by(username = username).first()
+    user = User.query.filter_by(email=email).first()
 
     if user:
-        return jsonify({"msg": "User exists"}), 400
-    
-    user = User()
-    user.username = username
-    user.password = bcrypt.generate_password_hash(password)
-    user.avatar = filename
+        return jsonify({"msg": "El email ya está registrado"}), 408
 
+    new_patient = Patient()
+    new_patient.name = username
+    db.session.add(new_patient)
+    db.session.commit()
+    patient = new_patient.serialize()
+
+    user = User()
+    user.email = email
+    user.password = bcrypt.generate_password_hash(password)
+    user.user_type = "patient"
+    user.patient_id = patient['id']
     db.session.add(user)
     db.session.commit()
 
-    access_token = create_access_token(identity=user.username)
+    access_token = create_access_token(identity=user.email)
+
     data = {
         "access_token": access_token,
-        "user": user.serialize()
-    }
-    return jsonify(data), 200
+        "user": user.serialize(),
+        "register": {
+            "error": "",
+            "message": "Paciente registrado con éxito.",
+            "finish": "true"
+        }
+        }
 
-@app.route('/api/send-lert') # TO DO: corregir texto alert
-def send_alert():
+    msg = Message("Bienvenido a Help Me Now - Paciente", 
+        sender="helpmn2020@gmail.com",
+        recipients=[email])
 
-    msg = Message("Prueba de Email", 
-        sender="helpmn2020@gmail.com", # TO DO:  cambiar esto para probar
-        recipients=[''])
-
-    msg.body = "Hola esto es una prueba de email"
+    msg.body = "Registro completado con éxito. Gracias por usar nuestro sitio."
 
     mail.send(msg)
 
-    return "Correo Enviado"
+    return jsonify(data), 200
+    
+
+    
+
+@app.route('/api/patient_request', methods=['POST'])
+def handlePatientRequest():
+    #Filtra y devuelve todos los profesionales cuyo status sea true (1)
+    availablePros = Professional.query.filter_by(status = 1).all()
+    #Se obtienen los síntomas del paciente desde el session storage
+    sintomas = request.json.get("sintomas", None)
+    recipients = []
+    #Por cada profesional disponible, añade su correo a la variable recipients
+    if availablePros:
+        for pro in availablePros:
+            recipients.append(pro.email)
+        print(recipients)
+        msg = Message("Solicitud de Ayuda - Help Me Now",
+                sender="helpmn2020@gmail.com",
+                recipients= recipients)
+
+        msg.body = "Hay un usuario que necesita atención psicológica inmediata, sus síntomas son:" + " " + sintomas
+        #TODO: Enviar al profesional el link directo hacia el chat
+        mail.send(msg)
+        return "Solicitud de Ayuda enviada a todos los profesionales disponibles."
 
 @app.route('/api/profile/<id>')
 def profile(id=None):
