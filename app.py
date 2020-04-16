@@ -9,8 +9,8 @@ from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token
 )
 from werkzeug.utils import secure_filename
-from flask_socketio import SocketIO, send
-from models import db, User, Professional, Patient, Panic_Alert, Status_Professional, Message_Sent, Chat_Room
+from flask_socketio import SocketIO, send, emit
+from models import db, User, Professional, Patient, Channel, Chat_Message
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static')
@@ -42,6 +42,10 @@ manager = Manager(app)
 manager.add_command("db", MigrateCommand)
 app.debug = True
 app.host = 'localhost'
+
+
+
+
 
 def send_mail(subject, sender, recipients, message):
     msg = Message(subject,
@@ -183,10 +187,6 @@ def handlePatientRequest():
         mail.send(msg)
         return "Solicitud de Ayuda enviada a todos los profesionales disponibles."
 
-@app.route('/api/profile/<id>')
-def profile(id=None):
-    return "ID del profesional es: {}".format(id)
-
 @app.route('/api/chat-room/<id>')
 @jwt_required
 def chat(id=None):
@@ -202,13 +202,49 @@ def uploaded_file(filename):
 def private():
     return jsonify({"msg": "Private Route"}), 200
 
-@socketIo.on("/message")
-def handleMessage(msg):
-    print(msg)
-    send(msg, broadcast=True)
-    return None
 
-# RUTAS DE PROFESIONALES
+
+
+# RUTAS DE PACIENTE -----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------
+
+# RUTAS DE CONTACTO ENTRE EL PACIENTE Y EL PROFESIONAL-------------------------------------
+
+@socketIo.on('new_request')
+def new_request(info):
+    # info contiene:
+    #   user_id
+    user_id = int(info['user_id'])
+
+   # Create New channel to chat with a profesional
+    new_channel = Channel()
+    new_channel.patient_user_id = user_id
+    new_channel.state = "pending"
+    db.session.add(new_channel)
+    db.session.commit()
+    channel = new_channel.serialize()
+
+    print(channel)
+
+    # Emit to the Patient the channel id created
+    emit('wait_channel_' + str(channel['patient_user_id']), {
+       "channel_id": channel['id']
+    }, broadcast=True)
+
+    # Emit to the Professionals the request with the patient and channel
+    user = User.query.filter_by(id = channel['patient_user_id']).first()
+    if user:
+        emit('wait_requests', {
+        "channel_id": channel['id'],
+        "state": channel['state']
+        }, broadcast=True)
+
+# ----------------------------------------------------------------------------------------
+
+
+
+# RUTAS DE PROFESIONALES -----------------------------------------------------------------------
 
 @app.route('/api/professional/login', methods=['POST'])
 def professional_login():
@@ -250,6 +286,36 @@ def professional_login():
                 "finish": "false"
             }
         }), 400
+
+
+
+
+
+    # BORRAR ------------------------------------
+    # Creacion de un usuario paciente para probar
+    patient = Patient.query.filter_by(name = "Paciente 1").first()
+    # 1. Se crea el paciente
+    if not patient:
+        new_patient = Patient()
+        new_patient.name = "Paciente 1"
+        db.session.add(new_patient)
+        db.session.commit()
+        patient = new_patient.serialize()
+
+    user_patient = User.query.filter_by(email = "paciente1@example.com").first()
+    # 2. Se registrará el usuario
+    if not user_patient:
+        user_patient = User()
+        user_patient.password = bcrypt.generate_password_hash("1234567")
+        user_patient.email = "paciente1@example.com"
+        user_patient.user_type = "patient"
+        user_patient.professional_id = patient['id']
+        db.session.add(user_patient)
+        db.session.commit()
+    #---------------------------------------------
+
+
+
 
 
     # 1. Se Logea el profesional
@@ -425,7 +491,136 @@ def professional_register():
     }
     return jsonify(data), 200
 
+@app.route('/api/professional/<id>/take/<channel_id>', methods=['POST'])
+def professional_take(id=None, channel_id=None):
+    # contiene:
+    #   id
+    #   channel_id
+    user_id = int(id)
+    parsed_channel_id = int(channel_id)
+
+    # buscar el usuario profesional
+    user = User.query.filter_by(id = user_id).first()
+    if not user:
+        return jsonify({
+            "user": {},
+            "error": "El usuario no existe"
+        }), 400
+    
+    # buscar el channel 
+    channel = Channel.query.filter_by(id = parsed_channel_id).first()
+    if not channel:
+        return jsonify({
+            "user": {},
+            "error": "El canal no existe"
+        }), 400
+    
+    # verificar si el canal fue tomado o no
+    #if channel.state:
+    #    return jsonify({
+    #        "user": {},
+    #        "error": "El canal no existe"
+    #    }), 400
+
+    channel.profesional_user_id = user.serialize()['id']
+    db.session.add(channel)
+    db.session.commit()
+
+    channel_id = channel.serialize()["id"]
+
+    # Respuesta
+    return jsonify({"channel_id": channel_id}), 200
+
+@app.route('/api/professional/requests', methods=['GET'])
+def professional_requests():
+    # buscar el usuario profesional
+    channels = Channel.query.filter_by(state = "pending").all()
+
+    # Respuesta
+    return jsonify({'channels': list(map(lambda channel: channel.to_request_serialize(), channels))}), 200
+
+
+@app.route('/api/channel/<channel_id>/messages', methods=['GET'])
+def channel_messages(channel_id=None):
+    # buscar los mensajes que esten en el channel
+    messages = Chat_Message.query.filter_by(channel_id = channel_id).all()
+
+    # Respuesta
+    return jsonify({'messages': list(map(lambda message: message.serialize(), messages))}), 200
+
+
+
+
+
+
+
+@socketIo.on('open_chat_to_patient')
+def open_chat_to_patient(info):
+    print("abierto el chat")
+    print(info['channel_id'])
+    emit('wait_professional_channel_' + str(info['channel_id']), {
+       "ok": "true"
+    }, broadcast=True)
+
+
+
+
+
+
+
+# PENDING
+@app.route('/api/profile/<id>')
+def profile(id=None):
+    return "ID del profesional es: {}".format(id)
+
+
+
+
+
+
+
+
+@socketIo.on("handleMessage")
+def handleMessage(msg):
+    print(msg)
+    send(msg, broadcast=True)
+    #return None
+
+@socketIo.on('new_message')
+def new_message(message):
+    # message contiene:
+    #   channel_id
+    #   user_id
+    #   text
+    user_id = int(message['user_id'])
+    channel_id = int(message['channel_id'])
+
+    # buscar el usuario profesional
+    user_query = User.query.filter_by(id = user_id).first()
+    # buscar el channel 
+    channel_query = Channel.query.filter_by(id = channel_id).first()
+
+    user = user_query.serialize()
+    channel = channel_query.serialize()  
+
+    # Save message
+    new_chat_message = Chat_Message()
+    new_chat_message.text = message['text']
+    new_chat_message.user_id = user["id"]
+    new_chat_message.username = user["email"]
+    new_chat_message.channel_id = channel["id"]
+    db.session.add(new_chat_message)
+    db.session.commit()
+
+
+    emit('channel-' + str(channel["id"]), {
+       "text": message['text'],
+       "user_id": message['user_id']
+    }, broadcast=True)
+
+# ----------------------------------------------------------------------------------------
+
 
 if __name__ == '__main__':
+    socketIo.run(app)
     manager.run()
-    
