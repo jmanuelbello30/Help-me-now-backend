@@ -9,8 +9,8 @@ from flask_jwt_extended import (
     JWTManager, jwt_required, create_access_token
 )
 from werkzeug.utils import secure_filename
-from flask_socketio import SocketIO, send
-from models import db, User, Professional, Patient, Panic_Alert, Status_Professional, Message_Sent, Chat_Room
+from flask_socketio import SocketIO, send, emit
+from models import db, User, Professional, Patient, Channel, Chat_Message
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static')
@@ -42,6 +42,10 @@ manager = Manager(app)
 manager.add_command("db", MigrateCommand)
 app.debug = True
 app.host = 'localhost'
+
+
+
+
 
 def send_mail(subject, sender, recipients, message):
     msg = Message(subject,
@@ -78,17 +82,48 @@ def loginPatient():
     email = request.json.get('email', None)
     password = request.json.get('password', None)
     if not email:
-        return jsonify({"msg": "Debe introducirse un email válido."}), 400
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "Debe introducirse un email válido.",
+                "finish": "false"
+            }
+        }), 400
+        #return jsonify({"msg": "Debe introducirse un email válido."}), 400
     if not password:
-        return jsonify({"msg": "Debe introducirse una contraseña válida."}), 400
+        #return jsonify({"msg": "Debe introducirse una contraseña válida."}), 400
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "Debe introducirse una contraseña válida",
+                "finish": "false"
+            }
+        }), 400
 
     user = User.query.filter_by(email = email).first()
-
     if not user:
-        return jsonify({"msg": "No se ha encontrado ningún usuario asociado a este email."}), 404
+        #return jsonify({"msg": "No se ha encontrado ningún usuario asociado a este email."}), 404
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "No se ha encontrado ningún usuario asociado a este email.",
+                "finish": "false"
+            }
+        }), 400
+
+    user_type = user.serialize()['user_type']
+    if user_type != "patient":
+        #return jsonify({"msg": "El correo ya esta en uso, acceda como profesional"}), 404
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "El correo ya esta en uso, acceda como profesional",
+                "finish": "false"
+            }
+        }), 400
+
 
     if bcrypt.check_password_hash(user.password, password):
-
         access_token = create_access_token(identity=email)
         data = {
             "access_token": access_token,
@@ -101,7 +136,14 @@ def loginPatient():
         }
         return jsonify(data), 200
     else:
-        return jsonify({"msg": "Algo ha salido mal."}), 401
+        #return jsonify({"msg": "Algo ha salido mal."}), 401
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "Algo ha salido mal.",
+                "finish": "false"
+            }
+        }), 400
 
 
 @app.route('/api/patient/register', methods=['POST'])
@@ -123,31 +165,32 @@ def registerPatient():
     if user:
         return jsonify({"msg": "El email ya está registrado"}), 408
 
+
+    new_user = User()
+    new_user.password = bcrypt.generate_password_hash(password)
+    new_user.email = email
+    new_user.user_type = "patient"
+    db.session.add(new_user)
+    db.session.commit()
+    user = new_user.serialize()
+
     new_patient = Patient()
     new_patient.name = username
+    new_patient.user_id = user['id']
     db.session.add(new_patient)
     db.session.commit()
-    patient = new_patient.serialize()
 
-    user = User()
-    user.email = email
-    user.password = bcrypt.generate_password_hash(password)
-    user.user_type = "patient"
-    user.patient_id = patient['id']
-    db.session.add(user)
-    db.session.commit()
-
-    access_token = create_access_token(identity=user.email)
+    access_token = create_access_token(identity=new_user.email)
 
     data = {
         "access_token": access_token,
-        "user": user.serialize(),
+        "user": user,
         "register": {
             "error": "",
             "message": "Paciente registrado con éxito.",
             "finish": "true"
         }
-        }
+    }
 
     msg = Message("Bienvenido a Help Me Now - Paciente", 
         sender="helpmn2020@gmail.com",
@@ -158,9 +201,6 @@ def registerPatient():
     mail.send(msg)
 
     return jsonify(data), 200
-    
-
-    
 
 @app.route('/api/patient_request', methods=['POST'])
 def handlePatientRequest():
@@ -172,25 +212,22 @@ def handlePatientRequest():
     #Por cada profesional disponible, añade su correo a la variable recipients
     if availablePros:
         for pro in availablePros:
-            recipients.append(pro.email)
+            user = User.query.filter_by(id = pro.user_id).first()
+            recipients.append(user.email)
         print(recipients)
         msg = Message("Solicitud de Ayuda - Help Me Now",
                 sender="helpmn2020@gmail.com",
                 recipients= recipients)
 
-        msg.body = "Hay un usuario que necesita atención psicológica inmediata, sus síntomas son:" + " " + sintomas
-        #TODO: Enviar al profesional el link directo hacia el chat
+        msg.body = "Hay un usuario que necesita atención psicológica inmediata, sus síntomas son:" + " " + sintomas + ". Haz click aquí para acceder: http://localhost:3000/"
+        #TO DO: Enviar al profesional el link directo hacia el chat
         mail.send(msg)
         return "Solicitud de Ayuda enviada a todos los profesionales disponibles."
 
-@app.route('/api/profile/<id>')
-def profile(id=None):
-    return "ID del profesional es: {}".format(id)
 
-@app.route('/api/chat-room/<id>')
-@jwt_required
-def chat(id=None):
-    pass
+
+
+
 
 @app.route('/api/user/avatar/<filename>')
 @jwt_required
@@ -202,13 +239,49 @@ def uploaded_file(filename):
 def private():
     return jsonify({"msg": "Private Route"}), 200
 
-@socketIo.on("/message")
-def handleMessage(msg):
-    print(msg)
-    send(msg, broadcast=True)
-    return None
 
-# RUTAS DE PROFESIONALES
+
+
+# RUTAS DE PACIENTE -----------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------
+
+# RUTAS DE CONTACTO ENTRE EL PACIENTE Y EL PROFESIONAL-------------------------------------
+
+@socketIo.on('new_request')
+def new_request(info):
+    # info contiene:
+    #   user_id
+    #   patient_state # TO DO, Agregar en el channel este campo
+    user_id = int(info['user_id'])
+
+   # Create New channel to chat with a profesional
+    new_channel = Channel()
+    new_channel.patient_user_id = user_id
+    new_channel.state = "pending"
+    db.session.add(new_channel)
+    db.session.commit()
+    channel = new_channel.serialize()
+
+    print(channel)
+
+    # Emit to the Patient the channel id created
+    emit('wait_channel_' + str(channel['patient_user_id']), {
+       "channel_id": channel['id']
+    }, broadcast=True)
+
+    # Emit to the Professionals the request with the patient and channel
+    user = User.query.filter_by(id = channel['patient_user_id']).first()
+    if user:
+        emit('wait_requests', {
+        "channel_id": channel['id'],
+        "state": channel['state']
+        }, broadcast=True)
+
+# ----------------------------------------------------------------------------------------
+
+
+# RUTAS DE PROFESIONALES -----------------------------------------------------------------------
 
 @app.route('/api/professional/login', methods=['POST'])
 def professional_login():
@@ -237,11 +310,8 @@ def professional_login():
                 "finish": "false"
             }
         }), 400
-
-    # Pasaron todas las validaciones
-
+    
     user = User.query.filter_by(email = email).first()
-
     if not user:
         return jsonify({
             "user": {},
@@ -251,6 +321,17 @@ def professional_login():
             }
         }), 400
 
+    user_type = user.serialize()['user_type']
+    if user_type != "professional":
+        return jsonify({
+            "user": {},
+            "login": {
+                "error": "El correo ya esta en uso, no puede ingresar como profesional",
+                "finish": "false"
+            }
+        }), 400
+
+    # Pasaron todas las validaciones
 
     # 1. Se Logea el profesional
     if bcrypt.check_password_hash(user.password, password):
@@ -287,7 +368,7 @@ def professional_register():
     #   request.files.numberid
     #   request.files.curriculum
 
-    #print(request.files)
+    print(request.files)
 
     if not request.files:
        return jsonify({"message": "Debe Seleccionar los documentos"}), 400
@@ -386,37 +467,37 @@ def professional_register():
     # Pasaron todas las validaciones
     # Se registra el profesional en 3 pasos:
 
-    # 1. Se crea el profesional
+    # 1. Se registrará el usuario
+    new_user = User()
+    new_user.password = bcrypt.generate_password_hash(password)
+    new_user.email = email
+    new_user.user_type = "professional"
+    db.session.add(new_user)
+    db.session.commit()
+    user = new_user.serialize()
+
+    # 2. Se crea el profesional
     new_professional = Professional()
     new_professional.name = name
+    new_professional.user_id = user['id']
     new_professional.rut = filename_rut
     new_professional.certification = filename_certification
     new_professional.numberid = filename_numberid
     new_professional.curriculum = filename_curriculum
     db.session.add(new_professional)
     db.session.commit()
-    professional = new_professional.serialize()
-
-    # 2. Se registrará el usuario
-    user = User()
-    user.password = bcrypt.generate_password_hash(password)
-    user.email = email
-    user.user_type = "professional"
-    user.professional_id = professional['id']
-    db.session.add(user)
-    db.session.commit()
 
     #Se envía correo de confirmación
-    html = render_template('base.html', user=user)
-    send_mail("Bienvenido a Help me Now - Profesional", "helpmn2020@gmail.com", user.email, html)
+    html = render_template('base.html', user=new_user)
+    send_mail("Bienvenido a Help me Now - Profesional", "helpmn2020@gmail.com", new_user.email, html)
 
     # Luego de la creacion del usuario, se general el token de acceso para el login
-    access_token = create_access_token(identity=user.email)
+    access_token = create_access_token(identity=new_user.email)
 
     # Respuesta
     data = {
         "access_token": access_token,
-        "user": user.serialize(),
+        "user": user,
         "register": {
             "error": "",
             "message": "Profesional registrado con éxito",
@@ -425,7 +506,169 @@ def professional_register():
     }
     return jsonify(data), 200
 
+@app.route('/api/professional/<id>/take/<channel_id>', methods=['POST'])
+def professional_take(id=None, channel_id=None):
+    # contiene:
+    #   id
+    #   channel_id
+    user_id = int(id)
+    parsed_channel_id = int(channel_id)
+
+    # buscar el usuario profesional
+    user = User.query.filter_by(id = user_id).first()
+    if not user:
+        return jsonify({
+            "user": {},
+            "error": "El usuario no existe"
+        }), 400
+    
+    # buscar el channel 
+    channel = Channel.query.filter_by(id = parsed_channel_id).first()
+    if not channel:
+        return jsonify({
+            "user": {},
+            "error": "El canal no existe"
+        }), 400
+    
+    # verificar si el canal fue tomado o no
+    #if channel.state:
+    #    return jsonify({
+    #        "user": {},
+    #        "error": "El canal no existe"
+    #    }), 400
+
+    channel.profesional_user_id = user.serialize()['id']
+    db.session.add(channel)
+    db.session.commit()
+
+    channel_id = channel.serialize()["id"]
+
+    # Respuesta
+    return jsonify({"channel_id": channel_id}), 200
+
+@app.route('/api/professional/requests', methods=['GET'])
+def professional_requests():
+    # buscar el usuario profesional
+    channels = Channel.query.filter_by(state = "pending").all()
+
+    # Respuesta
+    return jsonify({'channels': list(map(lambda channel: channel.to_request_serialize(), channels))}), 200
+
+@app.route('/api/professional/handling/notifications', methods=['POST'])
+def professional_handling_notifications():
+    # Data recibida:
+    #   request.state
+    #   request.id
+    state = int(request.json.get('state', None))
+    user_id = int(request.json.get('id', None))
+    print(state)
+
+    professional = Professional.query.filter_by(user_id = user_id).first()
+    #cerrar channel
+    professional.status = state
+    db.session.commit()
+
+    # Respuesta
+    return jsonify({'result': "ok"}), 200
+
+@app.route('/api/professional/<id>/notifications/state', methods=['GET'])
+def professional_notification_state(id=None):
+    professional = Professional.query.filter_by(user_id = id).first()
+
+    # Respuesta
+    return jsonify({'state': professional.status}), 200
+
+
+# RUTAS DE CHANNELS -----------------------------------------------------------------------
+
+@socketIo.on('closed_channel')
+def closed_channel(info):
+    # info contiene:
+    #   channel_id
+    # Emit to the Other User that the channel was closed
+    emit('channel_closed_' + str(info['channel_id']), {
+       "state": "closed"
+    }, broadcast=True)
+
+@app.route('/api/channel/close', methods=['POST'])
+def close_channel():
+    # Data recibida:
+    #   request.channel_id
+    #   request.user_id
+    channel_id = request.json.get('channel_id', None)
+    # buscar el channel a cerrar
+    channel = Channel.query.filter_by(id = channel_id).first()
+    #cerrar channel
+    channel.state = "close"
+    db.session.commit()
+
+    # Respuesta
+    return jsonify({'message': "ok"}), 200
+
+@app.route('/api/channel/<channel_id>/messages', methods=['GET'])
+def channel_messages(channel_id=None):
+    # buscar los mensajes que esten en el channel
+    messages = Chat_Message.query.filter_by(channel_id = channel_id).all()
+
+    # Respuesta
+    return jsonify({'messages': list(map(lambda message: message.serialize(), messages))}), 200
+
+@socketIo.on('open_chat_to_patient')
+def open_chat_to_patient(info):
+    print("abierto el chat")
+    print(info['channel_id'])
+
+    # buscar el channel a ocupar
+    channel_id = int(info['channel_id'])
+    channel = Channel.query.filter_by(id = channel_id).first()
+    #cerrar channel
+    channel.state = "occupied"
+    db.session.commit()
+
+    emit('wait_professional_channel_' + str(info['channel_id']), {
+       "ok": "true"
+    }, broadcast=True)
+
+@socketIo.on("handleMessage")
+def handleMessage(msg):
+    print(msg)
+    send(msg, broadcast=True)
+    #return None
+
+@socketIo.on('new_message')
+def new_message(message):
+    # message contiene:
+    #   channel_id
+    #   user_id
+    #   text
+    user_id = int(message['user_id'])
+    channel_id = int(message['channel_id'])
+
+    # buscar el usuario profesional
+    user_query = User.query.filter_by(id = user_id).first()
+    # buscar el channel 
+    channel_query = Channel.query.filter_by(id = channel_id).first()
+
+    user = user_query.serialize()
+    channel = channel_query.serialize()  
+
+    # Save message
+    new_chat_message = Chat_Message()
+    new_chat_message.text = message['text']
+    new_chat_message.user_id = user["id"]
+    new_chat_message.username = user["email"]
+    new_chat_message.channel_id = channel["id"]
+    db.session.add(new_chat_message)
+    db.session.commit()
+
+    emit('channel-' + str(channel["id"]), {
+       "text": message['text'],
+       "user_id": message['user_id']
+    }, broadcast=True)
+
+# ----------------------------------------------------------------------------------------
+
 
 if __name__ == '__main__':
+    socketIo.run(app)
     manager.run()
-    
