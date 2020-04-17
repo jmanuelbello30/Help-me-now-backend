@@ -8,10 +8,6 @@ class User(db.Model):
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
     user_type = db.Column(db.String(100), nullable=False) 
-    #Relación one-to-one con los modelos Paciente y Profesional, por lo tanto 
-    #parámetro debe ser uselist=False
-    #professional = db.relationship('Professional', uselist=False, backref='professional', lazy=True)
-    #patient = db.relationship('Patient', uselist=False, backref='patient', lazy=True)   
 
     def __repr__(self):
         return '<User &r>' % self.email
@@ -20,15 +16,8 @@ class User(db.Model):
         return {
             "id": self.id,
             "email": self.email,
-            "user_type": self.user_type,
-            #"professional": self.professional_id,
-            #"patient": self.patient_id
+            "user_type": self.user_type
        }
-
-psicological_therapy = db.Table('psicological_therapy',
-    db.Column('professional_id', db.Integer, db.ForeignKey('professionals.id'), primary_key=True),
-    db.Column('patient_id', db.Integer, db.ForeignKey('patients.id'), primary_key=True)
-)
 
 class Professional(db.Model):
     __tablename__='professionals'
@@ -38,6 +27,8 @@ class Professional(db.Model):
     certification = db.Column(db.String(100), nullable=False, default="sin-foto.png")
     numberid = db.Column(db.String(100), nullable=False, default="sin-foto.png")
     curriculum = db.Column(db.String(100), nullable=False, default="sin-foto.png")
+    status = db.Column(db.Integer, nullable=True, default=0)
+    user_id = db.Column(db.Integer, nullable=False)
 
     def __repr__(self):
         return "<Professional %r>" % self.name
@@ -52,22 +43,16 @@ class Patient(db.Model):
     __tablename__='patients'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    alerts = db.relationship('Panic_Alert', backref='patient', lazy=True)
-    mesagges_sent = db.relationship('Message_Sent', backref='Professional', lazy=True)
-    #user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    user_id = db.Column(db.Integer, nullable=False)
+
     def __repr__(self):
         return "<Patient %r>" % self.name
 
     def serialize(self):
         return{
             "id": self.id,
-            "name": self.name,
-            "alerts": self.alerts,
-            "message_sent": self.mesagges_sent
+            "name": self.name
         }
-
-
-
 
 class Channel(db.Model):
     __tablename__ = 'channels'
