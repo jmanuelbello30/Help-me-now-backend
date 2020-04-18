@@ -44,9 +44,6 @@ app.debug = True
 app.host = 'localhost'
 
 
-
-
-
 def send_mail(subject, sender, recipients, message):
     msg = Message(subject,
                   sender=sender,
@@ -145,7 +142,6 @@ def loginPatient():
             }
         }), 400
 
-
 @app.route('/api/patient/register', methods=['POST'])
 def registerPatient():
     if not request.is_json:
@@ -192,13 +188,8 @@ def registerPatient():
         }
     }
 
-    msg = Message("Bienvenido a Help Me Now - Paciente", 
-        sender="helpmn2020@gmail.com",
-        recipients=[email])
-
-    msg.body = "Registro completado con éxito. Gracias por usar nuestro sitio."
-
-    mail.send(msg)
+    html = render_template('base.html', user=new_user)
+    send_mail("Bienvenido a Help me Now - Paciente", "helpmn2020@gmail.com", new_user.email, html)
 
     return jsonify(data), 200
 
@@ -224,11 +215,6 @@ def handlePatientRequest():
         mail.send(msg)
         return "Solicitud de Ayuda enviada a todos los profesionales disponibles."
 
-
-
-
-
-
 @app.route('/api/user/avatar/<filename>')
 @jwt_required
 def uploaded_file(filename):
@@ -238,8 +224,6 @@ def uploaded_file(filename):
 @jwt_required
 def private():
     return jsonify({"msg": "Private Route"}), 200
-
-
 
 
 # RUTAS DE PACIENTE -----------------------------------------------------------------------
@@ -279,7 +263,6 @@ def new_request(info):
         }, broadcast=True)
 
 # ----------------------------------------------------------------------------------------
-
 
 # RUTAS DE PROFESIONALES -----------------------------------------------------------------------
 
