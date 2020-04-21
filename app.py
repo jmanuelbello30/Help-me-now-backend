@@ -29,7 +29,7 @@ app.config['MAIL_PORT'] = 465
 app.config['MAIL_USE_SSL'] = True
 app.config['MAIL_DEBUG'] = True
 app.config['MAIL_USERNAME'] = 'helpmn2020@gmail.com'
-app.config['MAIL_PASSWORD'] = 'Helpmenow2020'
+app.config['MAIL_PASSWORD'] = ''
 app.config['SECRET_KEY'] = 'mysecret'
 JWTManager(app)
 CORS(app)
