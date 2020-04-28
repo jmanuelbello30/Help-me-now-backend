@@ -29,7 +29,7 @@ app.config['MAIL_PORT'] = 465
 app.config['MAIL_USE_SSL'] = True
 app.config['MAIL_DEBUG'] = True
 app.config['MAIL_USERNAME'] = 'helpmn2020@gmail.com'
-app.config['MAIL_PASSWORD'] = '...'
+app.config['MAIL_PASSWORD'] = 'Helpmenow2020'
 app.config['SECRET_KEY'] = 'mysecret'
 JWTManager(app)
 CORS(app)
@@ -215,10 +215,6 @@ def handlePatientRequest():
         mail.send(msg)
         return "Solicitud de Ayuda enviada a todos los profesionales disponibles."
 
-@app.route('/api/user/avatar/<filename>')
-@jwt_required
-def uploaded_file(filename):
-    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'img/avatar'), filename)
 
 @app.route('/api/private', methods=['GET'])
 @jwt_required
@@ -236,7 +232,7 @@ def private():
 def new_request(info):
     # info contiene:
     #   user_id
-    #   patient_state # TO DO, Agregar en el channel este campo
+    #   patient_state # TO DO, gregar en el channel este campo
     user_id = int(info['user_id'])
 
    # Create New channel to chat with a profesional
@@ -489,6 +485,83 @@ def professional_register():
     }
     return jsonify(data), 200
 
+
+# RUTA PROFESIONAL EDITAR PERFIL
+
+@app.route('/api/professional/files-edit/<int:id>', methods=['PUT'])
+def edit_files(id=None):
+    if not request.files:
+       return jsonify({"message": "Debe Seleccionar los documentos"}), 400
+       
+    editFiles = Professional.query.get(id).first()
+
+    rut = request.files["rut"]
+    certification = request.files["certification"]
+    numberid = request.files["numberid"]
+    curriculum = request.files["curriculum"]
+
+    if not rut or rut.filename == "":
+        return jsonify({'msg': 'Debe cargar los documentos'}), 400
+    if not certification or certification.filename == "":
+        return jsonify({'msg': 'Debe cargar los documentos'}), 400
+    if not numberid or numberid.filename == "":
+        return jsonify({'msg': 'Debe cargar los documentos'}), 400
+    if curriculum and curriculum.filename == "":
+        return jsonify({'msg': 'Debe cargar los documentos'}), 400
+
+    if allowed_file(rut.filename):
+        filename_rut = secure_filename(rut.filename + "_" + email)
+        rut.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_rut))
+    
+    if allowed_file(certification.filename):
+        filename_certification = secure_filename(certification.filename + "_" + email)
+        certification.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_certification))
+    
+    if allowed_file(numberid.filename):
+        filename_numberid = secure_filename(numberid.filename + "_" + email)
+        numberid.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_numberid))
+    
+    if allowed_file(curriculum.filename):
+        filename_curriculum = secure_filename(curriculum.filename + "_" + email)
+        curriculum.save(os.path.join(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename_curriculum))
+
+    if rut:
+        editFiles.rut = filename_rut
+    if certification:
+        editFiles.certification = filename_certification
+    if numberid:
+        editFiles.numberid = filename_numberid
+    if curriculum:
+        editFiles.curriculum = filename_curriculum
+
+    db.session.commit()
+
+    return ({'msg': 'Documentos Actualizados'}), 200
+
+@app.route('/api/professional/files/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(os.path.join(app.config['UPLOAD_FOLDER'], 'img/documents'), filename)
+
+@app.route('/api/professional/<int:id>', methods=['GET'])
+def professional_data(id=None):
+    if request.method == 'GET':
+    # buscar el usuario profesional
+        professional = Professional.query.get(id)
+        if id is not None:
+            return jsonify(professional.serialize()), 200
+        else:
+            return jsonify({"msg": "professional not exist "}), 404
+
+#RUTA PROFESIONAL NOTIFICACIONES
+
+@app.route('/api/professional/requests', methods=['GET'])
+def professional_requests():
+    # buscar el usuario profesional
+    channels = Channel.query.filter_by(state = "pending").all()
+
+    # Respuesta
+    return jsonify({'channels': list(map(lambda channel: channel.to_request_serialize(), channels))}), 200
+
 @app.route('/api/professional/<id>/take/<channel_id>', methods=['POST'])
 def professional_take(id=None, channel_id=None):
     # contiene:
@@ -528,14 +601,6 @@ def professional_take(id=None, channel_id=None):
 
     # Respuesta
     return jsonify({"channel_id": channel_id}), 200
-
-@app.route('/api/professional/requests', methods=['GET'])
-def professional_requests():
-    # buscar el usuario profesional
-    channels = Channel.query.filter_by(state = "pending").all()
-
-    # Respuesta
-    return jsonify({'channels': list(map(lambda channel: channel.to_request_serialize(), channels))}), 200
 
 @app.route('/api/professional/handling/notifications', methods=['POST'])
 def professional_handling_notifications():
